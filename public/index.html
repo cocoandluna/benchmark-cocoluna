@@ -419,6 +419,28 @@ function buildWeekProgress(){
 }
 
 // ---------- Generic sortable/searchable/paginated table ----------
+function csvEscape(v){
+  if(v===null || v===undefined) v='';
+  const s = String(v);
+  if(/[",\n;]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+function downloadCsv(filename, rows, csvColumns){
+  const header = csvColumns.map(c=>csvEscape(c.label)).join(',');
+  const lines = rows.map(r => csvColumns.map(c=>{
+    let v = c.get(r);
+    if(typeof v === 'number') v = Number.isFinite(v) ? (Math.round(v*100)/100) : '';
+    return csvEscape(v);
+  }).join(','));
+  const csv = '\uFEFF' + [header, ...lines].join('\r\n'); // BOM for Excel accented-char support
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function makeTable(cfg, extraFilter, famFilterId){
   const {tableId, searchId, pagId, countId, data, columns, searchKey, pageSize=25, defaultSortKey, defaultSortDir=-1} = cfg;
   const table = document.getElementById(tableId);
@@ -427,6 +449,22 @@ function makeTable(cfg, extraFilter, famFilterId){
   let sortKey = defaultSortKey, sortDir = defaultSortDir;
   let page = 0;
   let filtered = data;
+
+  // inject a download button next to the item-count label, once
+  if(cfg.csvColumns){
+    const countEl = document.getElementById(countId);
+    if(countEl && !countEl.parentElement.querySelector('.csv-dl-btn')){
+      const btn = document.createElement('button');
+      btn.className = 'nav-btn csv-dl-btn';
+      btn.style.cssText = 'font-size:12px; padding:6px 12px;';
+      btn.textContent = '📥 Baixar CSV';
+      countEl.parentElement.insertBefore(btn, countEl);
+      btn.addEventListener('click', ()=>{
+        const stamp = new Date().toISOString().slice(0,10);
+        downloadCsv(`${tableId}_${stamp}.csv`, filtered, cfg.csvColumns);
+      });
+    }
+  }
 
   function applyFilters(){
     const q = document.getElementById(searchId).value.toLowerCase();
@@ -529,6 +567,18 @@ makeTable({
     {key:'spend', label:'Spend', render:r=>dayCell(r.spend,'usd')},
     {key:'orders', label:'Orders', render:r=>dayCell(r.orders,'int')},
     {key:'acos', label:'ACOS', render:r=>acosText(r.acos)},
+  ],
+  csvColumns:[
+    {label:'Campanha', get:r=>r.name},
+    {label:'Família', get:r=>r._family||''},
+    {label:'CPC', get:r=>r.cpc},
+    {label:'Clicks (méd/sem)', get:r=>r.clicks},
+    {label:'Clicks (méd/dia)', get:r=>r.clicks/7},
+    {label:'Spend (méd/sem)', get:r=>r.spend},
+    {label:'Spend (méd/dia)', get:r=>r.spend/7},
+    {label:'Orders (méd/sem)', get:r=>r.orders},
+    {label:'Orders (méd/dia)', get:r=>r.orders/7},
+    {label:'ACOS %', get:r=>r.acos<999?r.acos:''},
   ]
 }, null, 'campFamFilter');
 
@@ -545,6 +595,19 @@ makeTable({
     {key:'spend', label:'Spend', render:r=>dayCell(r.spend,'usd')},
     {key:'orders', label:'Orders', render:r=>dayCell(r.orders,'int')},
     {key:'acos', label:'ACOS', render:r=>acosText(r.acos)},
+  ],
+  csvColumns:[
+    {label:'Termo de Busca', get:r=>r.term},
+    {label:'Família', get:r=>r._family||''},
+    {label:'Campanha(s)', get:r=>(r.campaigns||[]).join(' | ')},
+    {label:'CPC', get:r=>r.cpc},
+    {label:'Clicks (méd/sem)', get:r=>r.clicks},
+    {label:'Clicks (méd/dia)', get:r=>r.clicks/7},
+    {label:'Spend (méd/sem)', get:r=>r.spend},
+    {label:'Spend (méd/dia)', get:r=>r.spend/7},
+    {label:'Orders (méd/sem)', get:r=>r.orders},
+    {label:'Orders (méd/dia)', get:r=>r.orders/7},
+    {label:'ACOS %', get:r=>r.acos<999?r.acos:''},
   ]
 }, null, 'stFamFilter');
 
@@ -561,6 +624,20 @@ makeTable({
     {key:'spend', label:'Spend', render:r=>dayCell(r.spend,'usd')},
     {key:'orders', label:'Orders', render:r=>dayCell(r.orders,'int')},
     {key:'acos', label:'ACOS', render:r=>acosText(r.acos)},
+  ],
+  csvColumns:[
+    {label:'Palavra-chave / Target', get:r=>r.target},
+    {label:'Match Type', get:r=>r.mtype},
+    {label:'Família', get:r=>r._family||''},
+    {label:'Campanha(s)', get:r=>(r.campaigns||[]).join(' | ')},
+    {label:'CPC', get:r=>r.cpc},
+    {label:'Clicks (méd/sem)', get:r=>r.clicks},
+    {label:'Clicks (méd/dia)', get:r=>r.clicks/7},
+    {label:'Spend (méd/sem)', get:r=>r.spend},
+    {label:'Spend (méd/dia)', get:r=>r.spend/7},
+    {label:'Orders (méd/sem)', get:r=>r.orders},
+    {label:'Orders (méd/dia)', get:r=>r.orders/7},
+    {label:'ACOS %', get:r=>r.acos<999?r.acos:''},
   ]
 }, null, 'kwFamFilter');
 
@@ -1035,6 +1112,32 @@ function buildCompTable(tableId, searchId, pagId, countId, data, searchKey, isKw
       {key:'_adj', label:'Ajuste', render:r=>{
         const entityKey = isKw ? `${r.n}||${r.mt}` : r.n;
         return adjSelectHtml(viewKey, tableId, entityKey);
+      }},
+    ],
+    csvColumns:[
+      {label: isKw ? 'Palavra-chave / Target' : (tableId==='compStTable' ? 'Termo de Busca' : 'Campanha'), get:r=>r.n},
+      ...(isKw ? [{label:'Match Type', get:r=>r.mt}] : []),
+      {label:'Família', get:r=>r._family||''},
+      ...(tableId!=='compCampTable' ? [{label:'Campanha(s)', get:r=>{
+        const attrMap = isKw ? AUG_CAMPAIGN_ATTR.targets[viewKey] : AUG_CAMPAIGN_ATTR.searchterms[viewKey];
+        const key = isKw ? `${r.n}||${r.mt}` : r.n;
+        const entry = attrMap && attrMap[key];
+        if(!entry || !entry[0]) return '';
+        return entry[0].map(i=>AUG_CAMPAIGN_ATTR.dict[i]).join(' | ');
+      }}] : []),
+      {label:'CPC Atual', get:r=>r.cp},
+      {label:'CPC Março', get:r=>r._cpcBase},
+      {label:'Clicks Atual (méd/sem)', get:r=>r.cc/nWeeks},
+      {label:'Clicks Março (méd/sem)', get:r=>r.cb},
+      {label:'Spend Atual (méd/sem)', get:r=>r.sc/nWeeks},
+      {label:'Spend Março (méd/sem)', get:r=>r.sb},
+      {label:'Orders Atual (méd/sem)', get:r=>r.oc/nWeeks},
+      {label:'Orders Março (méd/sem)', get:r=>r.ob},
+      {label:'ACOS Atual %', get:r=>r.ac<999?r.ac:''},
+      {label:'ACOS Março %', get:r=>r.ab<999?r.ab:''},
+      {label:'Ajuste', get:r=>{
+        const entityKey = isKw ? `${r.n}||${r.mt}` : r.n;
+        return getAnnotation(viewKey, tableId, entityKey);
       }},
     ],
     afterRender: ()=> wireAdjSelects('#'+tableId+' tbody', viewKey, tableId)
